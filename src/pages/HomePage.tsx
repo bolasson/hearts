@@ -21,8 +21,9 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import BackspaceIcon from '@mui/icons-material/Backspace';
+import CheckIcon from '@mui/icons-material/Check';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import EditIcon from '@mui/icons-material/Edit';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
@@ -30,7 +31,6 @@ import GroupsIcon from '@mui/icons-material/Groups';
 import MemoryIcon from '@mui/icons-material/Memory';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import RemoveIcon from '@mui/icons-material/Remove';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import TableChartIcon from '@mui/icons-material/TableChart';
@@ -56,8 +56,7 @@ const MENU_WIDTH = 'min(100%, 430px)';
 const BUTTON_WIDTH = 'min(100%, 340px)';
 const MENU_BOTTOM_PADDING = 'max(54px, calc(env(safe-area-inset-bottom) + 38px))';
 const PLAYER_STAT_FONT_SIZE = 8;
-const SCORE_WHEEL_VALUES = Array.from({ length: 27 }, (_, index) => index);
-const SCORE_WHEEL_STEP = 52;
+const SCORE_KEYPAD_VALUES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 type HomeMode =
   | 'main'
@@ -289,7 +288,7 @@ export function HomePage() {
   const [inPersonRounds, setInPersonRounds] = useState<ScoreTupleMutable[]>([]);
   const [inPersonStartedAt, setInPersonStartedAt] = useState<string | null>(null);
   const [scoreEntry, setScoreEntry] = useState<ScoreEntryState | null>(null);
-  const scoreWheelRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const [scoreEntryPlayerIndex, setScoreEntryPlayerIndex] = useState(0);
   const [finishInPersonOpen, setFinishInPersonOpen] = useState(false);
   const newGame = useGameStore((s) => s.newGame);
   const loadGame = useGameStore((s) => s.loadGame);
@@ -333,18 +332,6 @@ export function HomePage() {
     });
   }, [mainHumanProfileId]);
 
-  useEffect(() => {
-    if (!scoreEntry) return;
-    window.setTimeout(() => {
-      scoreEntry.values.forEach((value, index) => {
-        if (index < 2) return;
-        const wheel = scoreWheelRefs.current[index];
-        if (!wheel) return;
-        wheel.scrollLeft = Number(value) * SCORE_WHEEL_STEP;
-      });
-    }, 0);
-  }, [scoreEntry?.editingRoundIndex]);
-
   const updatePlayersListFade = (element: HTMLDivElement | null) => {
     if (!element) return;
     const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
@@ -383,9 +370,10 @@ export function HomePage() {
     const existing = roundIndex === null ? null : inPersonRounds[roundIndex];
     setScoreEntry({
       editingRoundIndex: roundIndex,
-      values: existing ? existing.map(String) : ['0', '0', '0', '0'],
+      values: existing ? existing.map(String) : ['', '', '', ''],
       hasInteracted: false,
     });
+    setScoreEntryPlayerIndex(0);
   };
 
   const getScoreValidation = (entry: ScoreEntryState | null): { valid: boolean; error: string | null } => {
@@ -422,43 +410,78 @@ export function HomePage() {
   const hasValidScoreEntry = scoreValidation.valid;
   const scoreErrorMessage = scoreEntry?.hasInteracted ? scoreValidation.error : null;
 
-  const setScoreEntryValue = (index: number, score: number) => {
+  const setScoreEntryValue = (index: number, value: string) => {
     setScoreEntry((entry) => {
       if (!entry) return entry;
-      const nextValue = String(Math.min(26, Math.max(0, score)));
       const nextValues = [...entry.values];
-      nextValues[index] = nextValue;
+      nextValues[index] = value;
       return { ...entry, values: nextValues, hasInteracted: true };
     });
   };
 
-  const adjustScoreEntryValue = (index: number, delta: number) => {
-    const current = Number(scoreEntry?.values[index] || 0);
-    setScoreEntryValue(index, current + delta);
+  const enterScoreDigit = (digit: string) => {
+    const currentValue = scoreEntry?.values[scoreEntryPlayerIndex] ?? '';
+    const nextValue = currentValue === '0' ? digit : `${currentValue}${digit}`;
+    setScoreEntryValue(scoreEntryPlayerIndex, nextValue.length > 2 || Number(nextValue) > 26 ? digit : nextValue);
   };
 
-  const handleScoreWheelScroll = (index: number, element: HTMLDivElement) => {
-    const score = Math.min(26, Math.max(0, Math.round(element.scrollLeft / SCORE_WHEEL_STEP)));
-    if (scoreEntry?.values[index] === String(score)) return;
-    setScoreEntryValue(index, score);
+  const clearOrBackScoreInput = () => {
+    const currentValue = scoreEntry?.values[scoreEntryPlayerIndex] ?? '';
+    if (currentValue && currentValue !== '0') {
+      setScoreEntryValue(scoreEntryPlayerIndex, '');
+      return;
+    }
+    goBackFromScoreEntry();
   };
 
-  const selectScoreWheelValue = (index: number, score: number) => {
-    setScoreEntryValue(index, score);
-    scoreWheelRefs.current[index]?.scrollTo({
-      left: score * SCORE_WHEEL_STEP,
-      behavior: 'smooth',
-    });
+  const currentScoreValue = scoreEntry?.values[scoreEntryPlayerIndex] ?? '';
+  const currentScoreNumber = Number(currentScoreValue);
+  const hasCurrentScore =
+    currentScoreValue.trim() !== '' && Number.isInteger(currentScoreNumber) && currentScoreNumber >= 0 && currentScoreNumber <= 26;
+  const isLastScoreEntryPlayer = scoreEntryPlayerIndex === inPersonPlayerNames.length - 1;
+  const goToNextScorePlayer = () => {
+    if (!hasCurrentScore) {
+      setScoreEntryValue(scoreEntryPlayerIndex, '0');
+    }
+    setScoreEntryPlayerIndex((index) => Math.min(inPersonPlayerNames.length - 1, index + 1));
   };
 
-  const submitScoreEntry = () => {
-    if (!scoreEntry || !hasValidScoreEntry) return;
-    const round = scoreEntry.values.map((value) => Number(value)) as ScoreTupleMutable;
+  const goBackFromScoreEntry = () => {
+    if (scoreEntryPlayerIndex > 0) {
+      setScoreEntryPlayerIndex((index) => index - 1);
+      return;
+    }
+    setScoreEntry(null);
+  };
+
+  const submitScoreEntry = (valuesOverride?: string[]) => {
+    if (!scoreEntry) return;
+    const values = valuesOverride ?? scoreEntry.values;
+    const validation = getScoreValidation({ ...scoreEntry, values });
+    if (!validation.valid) return;
+    const round = values.map((value) => Number(value)) as ScoreTupleMutable;
     setInPersonRounds((rounds) => {
       if (scoreEntry.editingRoundIndex === null) return [...rounds, round];
       return rounds.map((existing, index) => (index === scoreEntry.editingRoundIndex ? round : existing));
     });
     setScoreEntry(null);
+  };
+
+  const acceptScoreEntryPlayer = () => {
+    if (!scoreEntry) return;
+    const normalizedValues = [...scoreEntry.values];
+    if (!hasCurrentScore) normalizedValues[scoreEntryPlayerIndex] = '0';
+    if (isLastScoreEntryPlayer) {
+      if (!hasCurrentScore) {
+        setScoreEntry({ ...scoreEntry, values: normalizedValues, hasInteracted: true });
+      }
+      submitScoreEntry(normalizedValues);
+      return;
+    }
+    if (!hasCurrentScore) {
+      setScoreEntry({ ...scoreEntry, values: normalizedValues, hasInteracted: true });
+    }
+    goToNextScorePlayer();
   };
 
   const placeForScore = (score: number, scores: ScoreTupleMutable): 1 | 2 | 3 | 4 => {
@@ -919,195 +942,206 @@ export function HomePage() {
       <Dialog
         open={Boolean(scoreEntry)}
         onClose={() => setScoreEntry(null)}
-        PaperProps={{ sx: popupPaperSx }}
+        PaperProps={{ sx: { ...popupPaperSx, overflow: 'visible' } }}
       >
-        <DialogTitle sx={{ fontWeight: 900, pb: 1 }}>Enter Scores</DialogTitle>
-        <DialogContent sx={{ pt: 1 }}>
-          <Stack spacing={1.5} sx={{ pt: 1 }}>
-            {inPersonPlayerNames.map((name, index) => {
-              const score = Number(scoreEntry?.values[index] ?? 0);
-              return (
-                <Box key={index}>
-                  <Typography sx={{ color: WOOD_MID, fontSize: 13, fontWeight: 600, mb: 0.55 }}>
-                    {name}'s Score
-                  </Typography>
-                  {index >= 2 ? (
-                    <Box
-                      sx={{
-                        position: 'relative',
-                        minHeight: 58,
-                        border: `2px solid ${WOOD_DARK}`,
-                        borderRadius: '8px',
-                        background: CREAM,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 8,
-                          bottom: 8,
-                          left: '50%',
-                          width: 46,
-                          transform: 'translateX(-50%)',
-                          border: `2px solid ${WOOD_DARK}`,
-                          borderRadius: '7px',
-                          pointerEvents: 'none',
-                          opacity: 0.4,
-                        }}
-                      />
-                      <Box
-                        ref={(element: HTMLDivElement | null) => {
-                          scoreWheelRefs.current[index] = element;
-                        }}
-                        onScroll={(event) => handleScoreWheelScroll(index, event.currentTarget)}
-                        role="listbox"
-                        aria-label={`${name}'s score`}
-                        aria-valuemin={0}
-                        aria-valuemax={26}
-                        aria-valuenow={score}
-                        tabIndex={0}
-                        sx={{
-                          display: 'flex',
-                          gap: '8px',
-                          height: 58,
-                          overflowX: 'auto',
-                          overflowY: 'hidden',
-                          scrollSnapType: 'x mandatory',
-                          px: 'calc(50% - 22px)',
-                          scrollbarWidth: 'none',
-                          maskImage: 'linear-gradient(90deg, transparent 0%, black 24%, black 76%, transparent 100%)',
-                          WebkitMaskImage:
-                            'linear-gradient(90deg, transparent 0%, black 24%, black 76%, transparent 100%)',
-                          '&::-webkit-scrollbar': { display: 'none' },
-                        }}
-                      >
-                        {SCORE_WHEEL_VALUES.map((value) => (
-                          <Button
-                            key={value}
-                            role="option"
-                            aria-selected={value === score}
-                            onClick={() => selectScoreWheelValue(index, value)}
+        <DialogTitle sx={{ fontSize: 30, fontWeight: 900, pb: 1, textAlign: 'center' }}>
+          Enter Scores
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1, pb: 2.5 }}>
+          <Stack spacing={2.25} sx={{ pt: 1.25 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', overflowX: 'auto', width: '100%' }}>
+              <TableContainer
+                component={Paper}
+                elevation={0}
+                sx={{
+                  background: CREAM,
+                  border: `2px solid ${WOOD_DARK}`,
+                  borderRadius: '6px',
+                  width: '100%',
+                  maxWidth: '100%',
+                }}
+              >
+                <Table size="small" aria-label="Scores entered so far" sx={{ width: '100%', tableLayout: 'fixed' }}>
+                  <TableHead>
+                    <TableRow sx={{ background: SCORE_HEADER_BG }}>
+                      {inPersonPlayerNames.map((name, index) => (
+                        <TableCell
+                          key={`${name}-${index}`}
+                          title={name}
+                          onClick={() => setScoreEntryPlayerIndex(index)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setScoreEntryPlayerIndex(index);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          sx={{
+                            ...(index === inPersonPlayerNames.length - 1 ? scoreLastCellSx : scoreCellSx),
+                            maxWidth: '8ch',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            fontWeight: 700,
+                            fontSize: 13,
+                            py: 0.65,
+                            cursor: 'pointer',
+                            '&:hover': { background: 'rgba(120, 53, 15, 0.08)' },
+                          }}
+                        >
+                          {name}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <TableRow sx={{ background: CREAM_ALT }}>
+                      {inPersonPlayerNames.map((_, index) => {
+                        const isActive = index === scoreEntryPlayerIndex;
+                        return (
+                          <TableCell
+                            key={index}
+                            onClick={() => setScoreEntryPlayerIndex(index)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setScoreEntryPlayerIndex(index);
+                              }
+                            }}
+                            role="button"
+                            tabIndex={0}
                             sx={{
-                              flex: '0 0 44px',
-                              minWidth: 44,
-                              scrollSnapAlign: 'center',
-                              color: value === score ? WOOD_DARK : WOOD_MID,
-                              fontSize: value === score ? 25 : 18,
-                              fontWeight: value === score ? 900 : 600,
-                              lineHeight: 1,
-                              textTransform: 'none',
-                              borderRadius: 0,
-                              '&:hover': { background: 'rgba(120, 53, 15, 0.08)' },
+                              ...(index === inPersonPlayerNames.length - 1 ? scoreLastCellSx : scoreCellSx),
+                              background: isActive ? SCORE_TOTAL_BG : undefined,
+                              color: WOOD_DARK,
+                              fontSize: isActive ? 20 : 16,
+                              fontWeight: isActive ? 900 : 600,
+                              py: 0.85,
+                              cursor: 'pointer',
+                              '&:hover': { background: isActive ? SCORE_TOTAL_BG : 'rgba(120, 53, 15, 0.08)' },
                             }}
                           >
-                            {value}
-                          </Button>
-                        ))}
-                      </Box>
-                    </Box>
-                  ) : (
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: '54px 1fr 54px',
-                        alignItems: 'center',
-                        minHeight: 52,
-                        border: `2px solid ${WOOD_DARK}`,
-                        borderRadius: '8px',
-                        background: CREAM,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <IconButton
-                        aria-label={`Decrease ${name}'s score`}
-                        disabled={score <= 0}
-                        onClick={() => adjustScoreEntryValue(index, -1)}
-                        sx={{
-                          height: '100%',
-                          borderRadius: 0,
-                          color: WOOD_DARK,
-                          '&:hover': { background: CREAM_HOVER },
-                          '&.Mui-disabled': { color: 'rgba(69, 26, 3, 0.32)' },
-                        }}
-                      >
-                        <RemoveIcon />
-                      </IconButton>
-                      <Typography
-                        sx={{
-                          borderLeft: `2px solid ${WOOD_DARK}`,
-                          borderRight: `2px solid ${WOOD_DARK}`,
-                          color: WOOD_DARK,
-                          fontSize: 26,
-                          fontWeight: 900,
-                          lineHeight: 1,
-                          textAlign: 'center',
-                        }}
-                      >
-                        {score}
-                      </Typography>
-                      <IconButton
-                        aria-label={`Increase ${name}'s score`}
-                        disabled={score >= 26}
-                        onClick={() => adjustScoreEntryValue(index, 1)}
-                        sx={{
-                          height: '100%',
-                          borderRadius: 0,
-                          color: WOOD_DARK,
-                          '&:hover': { background: CREAM_HOVER },
-                          '&.Mui-disabled': { color: 'rgba(69, 26, 3, 0.32)' },
-                        }}
-                      >
-                        <AddIcon />
-                      </IconButton>
-                    </Box>
-                  )}
-                </Box>
-              );
-            })}
-            <Typography
+                            {scoreEntry?.values[index] || '-'}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+            <Box sx={{ borderTop: `1px solid ${WOOD_MID}` }} />
+            <Box
               sx={{
-                color: '#b91c1c',
-                fontSize: 13,
-                fontWeight: 600,
-                lineHeight: 1.35,
-                minHeight: 44,
-                pt: 0.5,
-                visibility: scoreErrorMessage ? 'visible' : 'hidden',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 1,
               }}
             >
-              {scoreErrorMessage ?? 'Scores must total 26'}
-            </Typography>
+              {SCORE_KEYPAD_VALUES.map((value) => (
+                <Button
+                  key={value}
+                  aria-label={`Enter ${value}`}
+                  onClick={() => enterScoreDigit(value)}
+                  sx={{
+                    minHeight: 52,
+                    border: `2px solid ${WOOD_DARK}`,
+                    borderRadius: '8px',
+                    background: CREAM,
+                    color: WOOD_DARK,
+                    fontSize: 22,
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    '&:hover': { background: CREAM_HOVER },
+                  }}
+                >
+                  {value}
+                </Button>
+              ))}
+              <Button
+                aria-label={currentScoreValue && currentScoreValue !== '0' ? 'Clear score' : 'Go back'}
+                onClick={clearOrBackScoreInput}
+                sx={{
+                  minHeight: 52,
+                  border: `2px solid ${WOOD_DARK}`,
+                  borderRadius: '8px',
+                  background: DANGER,
+                  color: '#ffffff',
+                  fontSize: 22,
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  '&:hover': { background: DANGER_HOVER },
+                }}
+              >
+                {currentScoreValue && currentScoreValue !== '0' ? <BackspaceIcon /> : <ArrowBackIcon />}
+              </Button>
+              <Button
+                aria-label="Enter 0"
+                onClick={() => enterScoreDigit('0')}
+                sx={{
+                  minHeight: 52,
+                  border: `2px solid ${WOOD_DARK}`,
+                  borderRadius: '8px',
+                  background: CREAM,
+                  color: WOOD_DARK,
+                  fontSize: 22,
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  '&:hover': { background: CREAM_HOVER },
+                }}
+              >
+                0
+              </Button>
+              <Button
+                aria-label={isLastScoreEntryPlayer ? 'Submit scores' : 'Confirm score'}
+                disabled={isLastScoreEntryPlayer ? !hasValidScoreEntry && hasCurrentScore : false}
+                onClick={acceptScoreEntryPlayer}
+                sx={{
+                  minHeight: 52,
+                  border: `2px solid ${WOOD_DARK}`,
+                  borderRadius: '8px',
+                  background: FELT,
+                  color: '#ffffff',
+                  fontSize: 22,
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  '&:hover': { background: FELT_HOVER },
+                  '&.Mui-disabled': {
+                    background: 'rgba(120, 53, 15, 0.24)',
+                    color: WOOD_MID,
+                  },
+                }}
+              >
+                <CheckIcon />
+              </Button>
+            </Box>
           </Stack>
         </DialogContent>
-        <DialogActions sx={popupActionsSx}>
-          <Button
-            variant="outlined"
-            onClick={() => setScoreEntry(null)}
+        {scoreErrorMessage && (
+          <Paper
+            elevation={0}
             sx={{
-              borderColor: WOOD_MID,
-              color: WOOD_DARK,
+              position: 'absolute',
+              top: 'calc(100% + 10px)',
+              left: 0,
+              right: 0,
+              mx: 'auto',
+              width: '100%',
               background: CREAM,
-              textTransform: 'none',
-              fontSize: 16,
-              fontWeight: 600,
-              '&:hover': {
-                borderColor: WOOD_DARK,
-                background: CREAM_HOVER,
-              },
+              border: `3px solid ${WOOD_DARK}`,
+              borderRadius: '12px',
+              color: '#b91c1c',
+              px: 2,
+              py: 1.25,
+              textAlign: 'center',
+              fontSize: 13,
+              fontWeight: 700,
+              lineHeight: 1.35,
             }}
           >
-            Back
-          </Button>
-          <Button
-            variant="contained"
-            disabled={!hasValidScoreEntry}
-            onClick={submitScoreEntry}
-            sx={newGameButtonSx}
-          >
-            Submit
-          </Button>
-        </DialogActions>
+            {scoreErrorMessage}
+          </Paper>
+        )}
       </Dialog>
 
       {mode === 'players' && (
