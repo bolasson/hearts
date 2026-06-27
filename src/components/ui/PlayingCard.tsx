@@ -3,7 +3,7 @@ import { Box } from '@mui/material';
 import type { Card } from '@/game/Card';
 import { logger } from '@/logger';
 
-export type PlayingCardSize = 'player' | 'tableLarge' | 'small';
+export type PlayingCardSize = 'player' | 'playerLarge' | 'tableLarge' | 'small';
 export type PlayingCardHighlight = 'none' | 'selected';
 
 export type PlayingCardProps = {
@@ -16,19 +16,24 @@ export type PlayingCardProps = {
 };
 
 const SIZES: Record<PlayingCardSize, { width: number; height: number }> = {
+  // Original desktop hand card.
   player: { width: 88, height: 128 },
+  // Current mobile portrait hand card.
+  playerLarge: { width: 96, height: 140 },
   tableLarge: { width: 80, height: 112 },
   small: { width: 80, height: 112 },
 };
 
 const CORNER_FONT: Record<PlayingCardSize, { fontSize: number; lineHeight: number }> = {
   player: { fontSize: 26, lineHeight: 0.78 },
+  playerLarge: { fontSize: 20, lineHeight: 0.78 },
   tableLarge: { fontSize: 20, lineHeight: 0.85 },
   small: { fontSize: 12, lineHeight: 1 },
 };
 
 const CENTER_FONT: Record<PlayingCardSize, number> = {
   player: 48,
+  playerLarge: 52,
   tableLarge: 36,
   small: 24,
 };
@@ -53,7 +58,8 @@ export function PlayingCard({
   const { width, height } = SIZES[size];
   const corner = CORNER_FONT[size];
   const centerFontSize = CENTER_FONT[size];
-  const isLarge = size === 'tableLarge';
+  const isLarge = size === 'tableLarge' || size === 'playerLarge';
+  const cornerInset = size === 'playerLarge' ? 4 : isLarge ? 8 : 6;
 
   return (
     <motion.div
@@ -77,8 +83,8 @@ export function PlayingCard({
       <Box
         sx={{
           position: 'absolute',
-          left: isLarge ? 8 : 6,
-          top: isLarge ? 8 : 6,
+          left: 0,
+          top: 8,
           zIndex: 10,
           width: 24,
           display: 'flex',
@@ -124,8 +130,8 @@ export function PlayingCard({
       <Box
         sx={{
           position: 'absolute',
-          right: isLarge ? 8 : 6,
-          bottom: isLarge ? 8 : 6,
+          right: cornerInset,
+          bottom: cornerInset,
           zIndex: 10,
           width: 24,
           display: 'flex',

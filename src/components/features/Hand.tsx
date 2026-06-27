@@ -15,18 +15,37 @@
  * legal from illegal cards — the game tells you only if you try to play one.
  */
 
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Box } from '@mui/material';
 import { MAIN_PLAYER } from '@/game/Players';
-import { HAND_OVERLAP_HUMAN } from '@/game/layout';
 import { cardLabel, type Card } from '@/game/Card';
 import { useGameStore } from '@/state/useGameStore';
 import { PlayingCard } from '@/components/ui/PlayingCard';
 
-const FAN_WIDTH = 520;
-const FAN_HEIGHT = 128;
-const CARD_WIDTH = 88;
+const HAND_LAYOUT = {
+  // Current phone portrait hand: larger cards outside the board, full final card visible.
+  mobilePortrait: {
+    cardWidth: 96,
+    cardHeight: 140,
+    minOverlap: 26,
+    maxOverlap: 44,
+    maxWidth: 'calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right))',
+    animationOriginY: 360,
+  },
+  // Original desktop hand: smaller cards with a 520px fan inside the table.
+  desktop: {
+    cardWidth: 88,
+    cardHeight: 128,
+    minOverlap: 36,
+    maxOverlap: 36,
+    maxWidth: '520px',
+    animationOriginY: 275,
+  },
+  // Landscape gets its own profile later.
+} as const;
+
+const ACTIVE_HAND_LAYOUT = HAND_LAYOUT.mobilePortrait;
 
 type CardSlotProps = {
   card: Card;
@@ -88,12 +107,14 @@ const CardSlot = memo(function CardSlot({
       }}
       aria-label={`Play ${cardLabel(card)}`}
     >
-      <PlayingCard card={card} size="player" />
+      <PlayingCard card={card} size="playerLarge" />
     </motion.button>
   );
 });
 
 export function Hand() {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [fanWidth, setFanWidth] = useState(360);
   const hand = useGameStore((s) => s.hands[MAIN_PLAYER]);
   const phase = useGameStore((s) => s.phase);
   const selectedPassCards = useGameStore((s) => s.selectedPassCards);
@@ -104,7 +125,28 @@ export function Hand() {
   const isHumansTurn = phase === 'awaitingHumanPlay';
   const canTap = isPassing || isHumansTurn;
 
-  const total = Math.max(0, hand.length - 1) * HAND_OVERLAP_HUMAN;
+  useEffect(() => {
+    const element = shellRef.current;
+    if (!element) return;
+
+    const updateWidth = () => setFanWidth(element.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const overlap =
+    hand.length > 1
+      ? Math.max(
+          ACTIVE_HAND_LAYOUT.minOverlap,
+          Math.min(
+            ACTIVE_HAND_LAYOUT.maxOverlap,
+            (fanWidth - ACTIVE_HAND_LAYOUT.cardWidth) / Math.max(1, hand.length - 1)
+          )
+        )
+      : 0;
+  const total = Math.max(0, hand.length - 1) * overlap;
 
   // Stable for the lifetime of the component — reads latest state at call time
   // via getState(), so we never have to invalidate the cached callback. Lets
@@ -116,23 +158,25 @@ export function Hand() {
       return;
     }
     if (state.phase !== 'awaitingHumanPlay') return;
-    const totalNow = Math.max(0, state.hands[MAIN_PLAYER].length - 1) * HAND_OVERLAP_HUMAN;
+    const countNow = state.hands[MAIN_PLAYER].length;
+    const totalNow = Math.max(0, countNow - 1) * overlap;
     const origin = {
-      x: -totalNow / 2 + indexInFan * HAND_OVERLAP_HUMAN,
-      y: 275,
+      x: -totalNow / 2 + indexInFan * overlap,
+      y: ACTIVE_HAND_LAYOUT.animationOriginY,
       rotate: 0,
     };
     state.playHuman(card, origin);
-  }, []);
+  }, [overlap]);
 
   return (
     <Box
+      ref={shellRef}
       sx={{
-        position: 'absolute',
-        bottom: 12,
-        left: '50%',
+        position: 'relative',
         zIndex: 30,
-        transform: 'translateX(-50%)',
+        width: '100%',
+        maxWidth: ACTIVE_HAND_LAYOUT.maxWidth,
+        mx: 'auto',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -144,7 +188,7 @@ export function Hand() {
           sx={{
             mb: 1.5,
             minHeight: 26,
-            maxWidth: 520,
+            maxWidth: '100%',
             borderRadius: 999,
             background: 'rgba(0,0,0,0.35)',
             backdropFilter: 'blur(4px)',
@@ -160,11 +204,11 @@ export function Hand() {
         </Box>
       )}
 
-      <Box sx={{ position: 'relative', height: FAN_HEIGHT, width: FAN_WIDTH }}>
+      <Box sx={{ position: 'relative', height: ACTIVE_HAND_LAYOUT.cardHeight, width: '100%', overflow: 'visible' }}>
         {hand.map((card, i) => {
           const isSelected = selectedPassCards.some((x) => x.id === card.id);
           const isInFlight = inFlightPassIds.includes(card.id);
-          const left = FAN_WIDTH / 2 - total / 2 - CARD_WIDTH / 2 + i * HAND_OVERLAP_HUMAN;
+          const left = fanWidth / 2 - total / 2 - ACTIVE_HAND_LAYOUT.cardWidth / 2 + i * overlap;
           return (
             <CardSlot
               key={card.id}

@@ -28,6 +28,7 @@ import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import EditIcon from '@mui/icons-material/Edit';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import GroupsIcon from '@mui/icons-material/Groups';
+import HomeIcon from '@mui/icons-material/Home';
 import MemoryIcon from '@mui/icons-material/Memory';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -190,7 +191,12 @@ function formatLastPlayed(playedAt: string | undefined): string {
   if (!playedAt) return 'Never';
   const timestamp = new Date(playedAt);
   if (Number.isNaN(timestamp.getTime())) return 'Unknown';
-  const elapsedDays = Math.max(0, Math.floor((Date.now() - timestamp.getTime()) / 86_400_000));
+  const elapsedMs = Math.max(0, Date.now() - timestamp.getTime());
+  if (elapsedMs < 86_400_000) {
+    const elapsedHours = Math.max(1, Math.floor(elapsedMs / 3_600_000));
+    return `${elapsedHours} ${elapsedHours === 1 ? 'hour' : 'hours'}`;
+  }
+  const elapsedDays = Math.floor(elapsedMs / 86_400_000);
   return `${elapsedDays} ${elapsedDays === 1 ? 'day' : 'days'}`;
 }
 
@@ -289,7 +295,7 @@ export function HomePage() {
   const [inPersonStartedAt, setInPersonStartedAt] = useState<string | null>(null);
   const [scoreEntry, setScoreEntry] = useState<ScoreEntryState | null>(null);
   const [scoreEntryPlayerIndex, setScoreEntryPlayerIndex] = useState(0);
-  const [finishInPersonOpen, setFinishInPersonOpen] = useState(false);
+  const [inPersonResultsOpen, setInPersonResultsOpen] = useState(false);
   const newGame = useGameStore((s) => s.newGame);
   const loadGame = useGameStore((s) => s.loadGame);
   const savedGames = useGameStore((s) => s.savedGames);
@@ -493,6 +499,14 @@ export function HomePage() {
     return Math.min(4, lowerScoreCount + 1) as 1 | 2 | 3 | 4;
   };
 
+  const inPersonWinnerHeadline = () => {
+    const minScore = Math.min(...inPersonTotals);
+    const winners = inPersonPlayerNames.filter((_, index) => inPersonTotals[index] === minScore);
+    if (winners.length === 1) return `${winners[0]} wins the game!`;
+    if (winners.length === 2) return `${winners[0]} and ${winners[1]} tie!`;
+    return `${winners.join(', ')} tie!`;
+  };
+
   const finishInPersonGame = () => {
     const playedAt = new Date().toISOString();
     inPersonPlayerIds.forEach((id, index) => {
@@ -502,8 +516,19 @@ export function HomePage() {
         place: placeForScore(inPersonTotals[index], inPersonTotals),
       });
     });
-    setFinishInPersonOpen(false);
+    setInPersonResultsOpen(true);
+  };
+
+  const closeInPersonResultsToHome = () => {
+    setInPersonResultsOpen(false);
     setMode('main');
+  };
+
+  const playAnotherInPersonGame = () => {
+    setInPersonResultsOpen(false);
+    setScorecardPlayerIds(inPersonPlayerIds);
+    setMode('scorecardSetup');
+    setScorecardExiting(false);
   };
 
   const openPlayers = () => {
@@ -895,46 +920,124 @@ export function HomePage() {
       </Dialog>
 
       <Dialog
-        open={finishInPersonOpen}
-        onClose={() => setFinishInPersonOpen(false)}
-        PaperProps={{ sx: popupPaperSx }}
+        open={inPersonResultsOpen}
+        onClose={() => {}}
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            ...popupPaperSx,
+            width: { xs: 'calc(100vw - 24px)', sm: 'fit-content' },
+          },
+        }}
       >
-        <DialogTitle sx={{ fontWeight: 900, pb: 1 }}>Finish Game?</DialogTitle>
-        <DialogContent sx={{ pt: 1 }}>
-          <Typography sx={{ color: WOOD_MID, fontSize: 14, fontWeight: 600 }}>
-            Are you sure you want to finish the game?
-          </Typography>
+        <DialogContent sx={{ pt: { xs: 2.5, sm: 3 }, pb: 3, px: { xs: 1.5, sm: 3 } }}>
+          <Stack alignItems="center" spacing={2}>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography
+                sx={{
+                  fontWeight: 700,
+                  color: WOOD_DARK,
+                  fontSize: { xs: 20, sm: 22 },
+                }}
+              >
+                {inPersonWinnerHeadline()}
+              </Typography>
+            </Box>
+            <TableContainer
+              component={Paper}
+              elevation={0}
+              sx={{
+                background: CREAM,
+                border: `2px solid ${WOOD_DARK}`,
+                borderRadius: '6px',
+                width: 'auto',
+                display: 'inline-block',
+              }}
+            >
+              <Table size="small" aria-label="In-person final scoreboard" sx={{ width: 'auto' }}>
+                <TableHead>
+                  <TableRow sx={{ background: SCORE_HEADER_BG }}>
+                    <TableCell sx={{ ...scoreCellSx, fontWeight: 700 }}>Round</TableCell>
+                    {inPersonPlayerNames.map((name, index) => (
+                      <TableCell
+                        key={`${name}-${index}`}
+                        title={name}
+                        sx={{
+                          ...(index === inPersonPlayerNames.length - 1 ? scoreLastCellSx : scoreCellSx),
+                          maxWidth: '9ch',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {name}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {inPersonRounds.map((round, rowIndex) => (
+                    <TableRow key={rowIndex} sx={{ background: rowIndex % 2 === 0 ? CREAM : CREAM_ALT }}>
+                      <TableCell sx={{ ...scoreCellSx, fontWeight: 700 }}>{rowIndex + 1}</TableCell>
+                      {round.map((score, index) => (
+                        <TableCell
+                          key={index}
+                          sx={index === round.length - 1 ? scoreLastCellSx : scoreCellSx}
+                        >
+                          {score}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                  <TableRow sx={{ background: SCORE_TOTAL_BG }}>
+                    <TableCell sx={{ ...scoreCellSx, borderBottom: 0, fontWeight: 700 }}>Total</TableCell>
+                    {inPersonTotals.map((score, index) => (
+                      <TableCell
+                        key={index}
+                        sx={{
+                          ...(index === inPersonTotals.length - 1 ? scoreLastCellSx : scoreCellSx),
+                          borderBottom: 0,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {score}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
         </DialogContent>
+        <Box sx={{ mx: 3, borderTop: `1px solid ${WOOD_MID}` }} />
         <DialogActions sx={popupActionsSx}>
           <Button
-            variant="contained"
-            onClick={() => setFinishInPersonOpen(false)}
+            variant="outlined"
+            startIcon={<HomeIcon />}
+            onClick={closeInPersonResultsToHome}
             sx={{
-              background: DANGER,
-              color: '#ffffff',
+              borderColor: WOOD_MID,
+              color: WOOD_DARK,
               textTransform: 'none',
-              fontSize: 16,
               fontWeight: 600,
-              px: 3,
-              '&:hover': { background: DANGER_HOVER },
+              '&:hover': { borderColor: WOOD_DARK, background: 'rgba(120, 53, 15, 0.06)' },
             }}
           >
-            No
+            Home
           </Button>
           <Button
             variant="contained"
-            onClick={finishInPersonGame}
+            startIcon={<RestartAltIcon />}
+            onClick={playAnotherInPersonGame}
             sx={{
               background: FELT,
               color: '#ffffff',
               textTransform: 'none',
-              fontSize: 16,
               fontWeight: 600,
-              px: 3,
               '&:hover': { background: FELT_HOVER },
             }}
           >
-            Yes
+            New Game
           </Button>
         </DialogActions>
       </Dialog>
@@ -1666,7 +1769,7 @@ export function HomePage() {
                   variant="outlined"
                   fullWidth
                   startIcon={<EmojiEventsIcon />}
-                  onClick={() => setFinishInPersonOpen(true)}
+                  onClick={finishInPersonGame}
                   sx={{
                     minHeight: 48,
                     borderColor: WOOD_MID,
